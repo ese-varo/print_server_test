@@ -10,7 +10,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import fi.iki.elonen.NanoHTTPD
 import java.io.IOException
-import java.net.InetAddress
 import java.net.NetworkInterface
 
 class MainActivity : AppCompatActivity() {
@@ -27,6 +26,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // Initialize UI components
         ipAddressText = findViewById(R.id.ipAddressText)
         serverStatusText = findViewById(R.id.serverStatusText)
         printStatusText = findViewById(R.id.printStatusText)
