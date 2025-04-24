@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Thermal Printer Test Server"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/ipAddressText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Device IP: Unknown"
+        android:textSize="16sp"
+        android:layout_marginTop="8dp" />
+
+    <TextView
+        android:id="@+id/instructionText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Start the server and then access it from a browser at:\nhttp://[device-ip]:8080"
+        android:layout_marginTop="8dp" />
+
+    <TextView
+        android:id="@+id/serverStatusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Server status: Stopped"
+        android:textSize="16sp"
+        android:layout_marginTop="24dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="16dp">
+
+        <Button
+            android:id="@+id/startServerButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Start Server" />
+
+        <Space
+            android:layout_width="8dp"
+            android:layout_height="match_parent" />
+
+        <Button
+            android:id="@+id/stopServerButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:enabled="false"
+            android:text="Stop Server" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/printStatusLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Print Status:"
+        android:textStyle="bold"
+        android:layout_marginTop="32dp" />
+
+    <TextView
+        android:id="@+id/printStatusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="No print jobs received yet"
+        android:layout_marginTop="8dp" />
+
+</LinearLayout>
