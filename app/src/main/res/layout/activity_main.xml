@@ -64,6 +64,46 @@
             android:text="Stop Server" />
     </LinearLayout>
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Printer Type:"
+            android:layout_gravity="center_vertical"/>
+
+        <RadioGroup
+            android:id="@+id/printerTypeRadioGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginStart="8dp">
+
+            <RadioButton
+                android:id="@+id/manufacturerPrinterRadio"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Integrated Printer API"
+                android:checked="true" />
+
+            <RadioButton
+                android:id="@+id/thermalPrinterRadio"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="USB Thermal" />
+
+            <RadioButton
+                android:id="@+id/systemPrinterRadio"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="System Printer" />
+        </RadioGroup>
+    </LinearLayout>
+
     <TextView
         android:id="@+id/printStatusLabel"
         android:layout_width="match_parent"
@@ -78,5 +118,12 @@
         android:layout_height="wrap_content"
         android:text="No print jobs received yet"
         android:layout_marginTop="8dp" />
+
+    <Button
+        android:id="@+id/testPrintButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Print Test Ticket"
+        android:layout_marginTop="24dp" />
 
 </LinearLayout>

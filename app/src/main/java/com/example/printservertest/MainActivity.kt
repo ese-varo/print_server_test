@@ -5,6 +5,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Button
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -18,9 +20,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var printStatusText: TextView
     private lateinit var startServerButton: Button
     private lateinit var stopServerButton: Button
+    private lateinit var thermalPrinterRadio: RadioButton
+    private lateinit var systemPrinterRadio: RadioButton
+    private lateinit var manufacturerPrinterRadio: RadioButton
     private var printServer: PrintServer? = null
-    private lateinit var printerManager: ThermalPrinterManager
+    private lateinit var thermalPrinterManager: ThermalPrinterManager
+    private lateinit var systemPrinterManager: SystemPrinterManager
+    private lateinit var manufacturerPrinterManager: ManufacturerPrinterManager
     private val PORT = 8080
+    private var selectedPrinter = "manufacturer" // Default to manufacturer's API
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,16 +40,29 @@ class MainActivity : AppCompatActivity() {
         printStatusText = findViewById(R.id.printStatusText)
         startServerButton = findViewById(R.id.startServerButton)
         stopServerButton = findViewById(R.id.stopServerButton)
+        thermalPrinterRadio = findViewById(R.id.thermalPrinterRadio)
+        systemPrinterRadio = findViewById(R.id.systemPrinterRadio)
+        manufacturerPrinterRadio = findViewById(R.id.manufacturerPrinterRadio)
 
-        // Initialize printer manager
-        printerManager = ThermalPrinterManager(this)
+        // Initialize all printer managers
+        thermalPrinterManager = ThermalPrinterManager(this)
+        systemPrinterManager = SystemPrinterManager(this)
+        manufacturerPrinterManager = ManufacturerPrinterManager(this)
 
-        // Connect to printer
-        if (printerManager.connect()) {
-            printStatusText.text = "Printer connected"
-        } else {
-            printStatusText.text = "Failed to connect to printer"
+        // Setup radio buttons for printer selection
+        val printerTypeRadioGroup = findViewById<RadioGroup>(R.id.printerTypeRadioGroup)
+        printerTypeRadioGroup.setOnCheckedChangeListener { _, checkedId ->
+            selectedPrinter = when (checkedId) {
+                R.id.thermalPrinterRadio -> "thermal"
+                R.id.systemPrinterRadio -> "system"
+                else -> "manufacturer"
+            }
+
+            updatePrinterStatus()
         }
+
+        // Set initial printer status based on default selection
+        updatePrinterStatus()
 
         // Display the device IP
         val ipAddress = getLocalIpAddress()
@@ -72,8 +93,121 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Add test print button functionality
+        val testPrintButton = findViewById<Button>(R.id.testPrintButton)
+        testPrintButton.setOnClickListener {
+            // Create sample train ticket
+            val sampleTicket = """
+                TRAIN TICKET
+                ---------------------
+                
+                Date: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm").format(java.util.Date())}
+                Ticket #: ${(1000..9999).random()}
+                
+                From: Central Station
+                To:   North Terminal
+                
+                Departure: 14:30
+                Platform:  3
+                
+                Adult Fare:     $12.50
+                Service Fee:     $1.25
+                ---------------------
+                TOTAL:          $13.75
+                
+                Payment: CASH
+                
+                Thank you for traveling with us!
+                Please retain this ticket for inspection.
+            """.trimIndent()
+
+            // Try to print with selected printer
+            var success = false
+            when (selectedPrinter) {
+                "thermal" -> {
+                    success = if (thermalPrinterManager.isConnected() || thermalPrinterManager.connect()) {
+                        thermalPrinterManager.printText(sampleTicket)
+                    } else false
+                }
+                "system" -> {
+                    success = if (systemPrinterManager.isAvailable()) {
+                        systemPrinterManager.printText(sampleTicket)
+                    } else false
+                }
+                "manufacturer" -> {
+                    success = if (manufacturerPrinterManager.isConnected()) {
+                        manufacturerPrinterManager.printText(sampleTicket)
+                    } else false
+                }
+            }
+
+            if (success) {
+                Toast.makeText(this, "Test ticket sent to $selectedPrinter printer", Toast.LENGTH_SHORT).show()
+                printStatusText.text = "Last print: Test ticket ($selectedPrinter)"
+            } else {
+                // Try all other methods as fallback
+                Toast.makeText(this, "Failed with $selectedPrinter printer, trying others...", Toast.LENGTH_SHORT).show()
+
+                // Try each remaining method
+                if (selectedPrinter != "manufacturer" && manufacturerPrinterManager.isConnected() &&
+                    manufacturerPrinterManager.printText(sampleTicket)) {
+                    printStatusText.text = "Last print: Test ticket (manufacturer fallback)"
+                    return@setOnClickListener
+                }
+
+                if (selectedPrinter != "system" && systemPrinterManager.isAvailable() &&
+                    systemPrinterManager.printText(sampleTicket)) {
+                    printStatusText.text = "Last print: Test ticket (system fallback)"
+                    return@setOnClickListener
+                }
+
+                if (selectedPrinter != "thermal" &&
+                    (thermalPrinterManager.isConnected() || thermalPrinterManager.connect()) &&
+                    thermalPrinterManager.printText(sampleTicket)) {
+                    printStatusText.text = "Last print: Test ticket (thermal fallback)"
+                    return@setOnClickListener
+                }
+
+                // All methods failed
+                printStatusText.text = "Print failed with all methods!"
+            }
+        }
+
         // Initially disable the stop button
         updateButtonState(false)
+    }
+
+    /**
+     * Update printer status based on the selected printer type
+     */
+    private fun updatePrinterStatus() {
+        when (selectedPrinter) {
+            "thermal" -> {
+                // Test thermal printer connection
+                if (thermalPrinterManager.connect()) {
+                    printStatusText.text = "Thermal printer connected via USB"
+                } else {
+                    printStatusText.text = "Failed to connect to thermal printer via USB"
+                    // Don't auto-switch, just show the status
+                }
+            }
+            "system" -> {
+                // System printer selected
+                if (systemPrinterManager.isAvailable()) {
+                    printStatusText.text = "System printer service ready"
+                } else {
+                    printStatusText.text = "System printing service not available"
+                }
+            }
+            "manufacturer" -> {
+                // Manufacturer printer selected
+                if (manufacturerPrinterManager.isConnected()) {
+                    printStatusText.text = "Integrated printer ready"
+                } else {
+                    printStatusText.text = "Integrated printer not detected"
+                }
+            }
+        }
     }
 
     private fun updateButtonState(serverRunning: Boolean) {
@@ -85,8 +219,11 @@ class MainActivity : AppCompatActivity() {
         if (printServer != null && printServer!!.isAlive) {
             printServer!!.stop()
         }
-        if (::printerManager.isInitialized) {
-            printerManager.disconnect()
+        if (::thermalPrinterManager.isInitialized) {
+            thermalPrinterManager.disconnect()
+        }
+        if (::systemPrinterManager.isInitialized) {
+            systemPrinterManager.cleanup()
         }
         super.onDestroy()
     }
@@ -229,30 +366,111 @@ class MainActivity : AppCompatActivity() {
 
         private fun printText(text: String): Boolean {
             try {
-                // Use our ThermalPrinterManager to handle the printing
-                if (!printerManager.isConnected()) {
-                    mainHandler.post {
-                        Toast.makeText(context, "Printer not connected. Attempting to reconnect...", Toast.LENGTH_SHORT).show()
-                    }
-
-                    // Try to reconnect
-                    if (!printerManager.connect()) {
-                        mainHandler.post {
-                            Toast.makeText(context, "Failed to connect to printer", Toast.LENGTH_SHORT).show()
-                        }
-                        return false
-                    }
+                // First attempt with selected printer
+                val success = when (selectedPrinter) {
+                    "thermal" -> printWithThermalPrinter(text)
+                    "system" -> printWithSystemPrinter(text)
+                    else -> printWithManufacturerPrinter(text)
                 }
 
-                // Log the print request
-                android.util.Log.d("PrintServer", "Print request: $text")
+                // If selected method failed, try fallback printers
+                if (!success) {
+                    mainHandler.post {
+                        Toast.makeText(context, "Primary printing method failed, trying fallbacks...", Toast.LENGTH_SHORT).show()
+                    }
 
-                // Send to printer
-                return printerManager.printText(text)
+                    // Try manufacturer first if it wasn't the primary
+                    if (selectedPrinter != "manufacturer" &&
+                        manufacturerPrinterManager.isConnected() &&
+                        printWithManufacturerPrinter(text)) {
+                        return true
+                    }
+
+                    // Then try system printer
+                    if (selectedPrinter != "system" &&
+                        systemPrinterManager.isAvailable() &&
+                        printWithSystemPrinter(text)) {
+                        return true
+                    }
+
+                    // Finally try thermal printer
+                    if (selectedPrinter != "thermal" &&
+                        (thermalPrinterManager.isConnected() || thermalPrinterManager.connect()) &&
+                        printWithThermalPrinter(text)) {
+                        return true
+                    }
+
+                    // All methods failed
+                    mainHandler.post {
+                        Toast.makeText(context, "All printing methods failed", Toast.LENGTH_SHORT).show()
+                    }
+                    return false
+                }
+
+                return success
             } catch (e: Exception) {
+                Log.e("PrintServer", "Error printing: ${e.message}")
                 e.printStackTrace()
                 return false
             }
+        }
+
+        /**
+         * Try to print with the integrated manufacturer printer
+         */
+        private fun printWithManufacturerPrinter(text: String): Boolean {
+            // Check if manufacturer printer is connected
+            if (!manufacturerPrinterManager.isConnected()) {
+                mainHandler.post {
+                    Toast.makeText(context, "Integrated printer not available", Toast.LENGTH_SHORT).show()
+                }
+                return false
+            }
+
+            // Try to print with manufacturer printer
+            Log.d("PrintServer", "Printing with integrated manufacturer printer")
+            return manufacturerPrinterManager.printText(text)
+        }
+
+        /**
+         * Try to print with the thermal printer
+         */
+        private fun printWithThermalPrinter(text: String): Boolean {
+            // Check if thermal printer is connected
+            if (!thermalPrinterManager.isConnected()) {
+                mainHandler.post {
+                    Toast.makeText(context, "Thermal printer not connected. Attempting to reconnect...", Toast.LENGTH_SHORT).show()
+                }
+
+                // Try to reconnect
+                if (!thermalPrinterManager.connect()) {
+                    mainHandler.post {
+                        Toast.makeText(context, "Failed to connect to thermal printer", Toast.LENGTH_SHORT).show()
+                    }
+                    return false
+                }
+            }
+
+            // Try to print with thermal printer
+            Log.d("PrintServer", "Printing with thermal printer")
+            return thermalPrinterManager.printText(text)
+        }
+
+        /**
+         * Try to print with the system printer
+         */
+        private fun printWithSystemPrinter(text: String): Boolean {
+            // Check if system printer is available
+            if (!systemPrinterManager.isAvailable()) {
+                mainHandler.post {
+                    Toast.makeText(context, "System printer not available", Toast.LENGTH_SHORT).show()
+                }
+                return false
+            }
+
+            // Try to print with system printer
+            Log.d("PrintServer", "Printing with system printer")
+            return systemPrinterManager.printText(text)
         }
     }
 }
