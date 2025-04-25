@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Common USB printer class -->
+    <usb-device class="7" />
+
+    <!-- Vendor-specific class (may be used for printers) -->
+    <usb-device class="0" />
+
+    <!-- You can add specific vendor IDs if you know them -->
+    <!-- <usb-device vendor-id="1234" /> -->
+</resources>

@@ -4,6 +4,7 @@ package com.example.printservertest
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.widget.Button
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -15,6 +16,11 @@ import java.io.IOException
 import java.net.NetworkInterface
 
 class MainActivity : AppCompatActivity() {
+    companion object {
+        private const val TAG = "MainActivity"
+        private const val PORT = 8080
+    }
+
     private lateinit var ipAddressText: TextView
     private lateinit var serverStatusText: TextView
     private lateinit var printStatusText: TextView
@@ -27,7 +33,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var thermalPrinterManager: ThermalPrinterManager
     private lateinit var systemPrinterManager: SystemPrinterManager
     private lateinit var manufacturerPrinterManager: ManufacturerPrinterManager
-    private val PORT = 8080
     private var selectedPrinter = "manufacturer" // Default to manufacturer's API
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,9 +50,16 @@ class MainActivity : AppCompatActivity() {
         manufacturerPrinterRadio = findViewById(R.id.manufacturerPrinterRadio)
 
         // Initialize all printer managers
-        thermalPrinterManager = ThermalPrinterManager(this)
-        systemPrinterManager = SystemPrinterManager(this)
-        manufacturerPrinterManager = ManufacturerPrinterManager(this)
+        try {
+            thermalPrinterManager = ThermalPrinterManager(this)
+            systemPrinterManager = SystemPrinterManager(this)
+            manufacturerPrinterManager = ManufacturerPrinterManager(this)
+
+            Log.d(TAG, "Printer managers initialized successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing printer managers: ${e.message}")
+            Toast.makeText(this, "Error initializing printer services", Toast.LENGTH_LONG).show()
+        }
 
         // Setup radio buttons for printer selection
         val printerTypeRadioGroup = findViewById<RadioGroup>(R.id.printerTypeRadioGroup)
@@ -57,6 +69,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.systemPrinterRadio -> "system"
                 else -> "manufacturer"
             }
+            Log.d(TAG, "Selected printer changed to: $selectedPrinter")
 
             updatePrinterStatus()
         }
@@ -130,14 +143,10 @@ class MainActivity : AppCompatActivity() {
                     } else false
                 }
                 "system" -> {
-                    success = if (systemPrinterManager.isAvailable()) {
-                        systemPrinterManager.printText(sampleTicket)
-                    } else false
+                    success = systemPrinterManager.isAvailable() && systemPrinterManager.printText(sampleTicket)
                 }
                 "manufacturer" -> {
-                    success = if (manufacturerPrinterManager.isConnected()) {
-                        manufacturerPrinterManager.printText(sampleTicket)
-                    } else false
+                    success = manufacturerPrinterManager.isConnected() && manufacturerPrinterManager.printText(sampleTicket)
                 }
             }
 
@@ -216,34 +225,56 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        if (printServer != null && printServer!!.isAlive) {
-            printServer!!.stop()
+        try {
+            if (printServer != null && printServer!!.isAlive) {
+                printServer!!.stop()
+            }
+            if (::thermalPrinterManager.isInitialized) {
+                thermalPrinterManager.disconnect()
+            }
+            if (::systemPrinterManager.isInitialized) {
+                systemPrinterManager.cleanup()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during cleanup: ${e.message}")
+        } finally {
+            super.onDestroy()
         }
-        if (::thermalPrinterManager.isInitialized) {
-            thermalPrinterManager.disconnect()
-        }
-        if (::systemPrinterManager.isInitialized) {
-            systemPrinterManager.cleanup()
-        }
-        super.onDestroy()
     }
 
     // Get the device's local IP address
     private fun getLocalIpAddress(): String {
         try {
             val interfaces = NetworkInterface.getNetworkInterfaces()
+            val addresses = mutableListOf<String>()
+
             while (interfaces.hasMoreElements()) {
                 val iface = interfaces.nextElement()
                 if (iface.isLoopback || !iface.isUp) continue
 
-                val addresses = iface.inetAddresses
-                while (addresses.hasMoreElements()) {
-                    val addr = addresses.nextElement()
+                val ifAddresses = iface.inetAddresses
+                while (ifAddresses.hasMoreElements()) {
+                    val addr = ifAddresses.nextElement()
                     if (addr.hostAddress.contains(":")) continue // Skip IPv6
-                    return addr.hostAddress
+
+                    // Prefer non-local addresses (not 192.168.x.x or 10.x.x.x)
+                    val ip = addr.hostAddress
+                    addresses.add(ip)
+
+                    // WLAN interfaces are usually more relevant for our use case
+                    if (iface.name.startsWith("wlan")) {
+                        Log.d(TAG, "Found WLAN IP: $ip on ${iface.displayName}")
+                        return ip
+                    }
                 }
             }
+
+            // If we found at least one address, return the first one
+            if (addresses.isNotEmpty()) {
+                return addresses[0]
+            }
         } catch (e: Exception) {
+            Log.e(TAG, "Error getting IP address: ${e.message}")
             e.printStackTrace()
         }
         return "Unknown"
@@ -254,6 +285,8 @@ class MainActivity : AppCompatActivity() {
         private val mainHandler = Handler(Looper.getMainLooper())
 
         override fun serve(session: IHTTPSession): Response {
+            Log.d(TAG, "Received request: ${session.uri} (${session.method})")
+
             if (session.uri == "/print" && session.method == Method.POST) {
                 // Handle print request
                 try {
@@ -262,12 +295,19 @@ class MainActivity : AppCompatActivity() {
                     session.inputStream.read(buffer, 0, contentLength)
                     val textToPrint = String(buffer)
 
+                    Log.d(TAG, "Received print request with content length: $contentLength")
+
                     val success = printText(textToPrint)
 
                     if (success) {
                         mainHandler.post {
-                            Toast.makeText(context, "Printing: $textToPrint", Toast.LENGTH_SHORT).show()
-                            printStatusText.text = "Last print: ${textToPrint.substring(0, Math.min(20, textToPrint.length))}..."
+                            Toast.makeText(context, "Printing text...", Toast.LENGTH_SHORT).show()
+                            printStatusText.text = "Last print: ${
+                                if (textToPrint.length > 20)
+                                    textToPrint.substring(0, 20) + "..."
+                                else
+                                    textToPrint
+                            }"
                         }
                         return newFixedLengthResponse("Print job sent successfully")
                     } else {
@@ -277,6 +317,7 @@ class MainActivity : AppCompatActivity() {
                         return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Failed to print")
                     }
                 } catch (e: IOException) {
+                    Log.e(TAG, "Error processing print request: ${e.message}")
                     e.printStackTrace()
                     mainHandler.post {
                         printStatusText.text = "Print error: ${e.message}"
@@ -299,16 +340,20 @@ class MainActivity : AppCompatActivity() {
                     <title>Thermal Printer Test</title>
                     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
                     <style>
-                        body { font-family: Arial; margin: 20px; }
-                        button { padding: 10px; margin: 5px; }
-                        textarea { width: 100%; height: 100px; }
+                        body { font-family: Arial; margin: 20px; max-width: 800px; margin: 0 auto; padding: 20px; }
+                        button { padding: 10px; margin: 5px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }
+                        button:hover { background-color: #45a049; }
+                        textarea { width: 100%; height: 100px; padding: 8px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ccc; }
+                        h1, h2 { color: #333; }
+                        .status { margin-top: 10px; padding: 10px; border-radius: 4px; }
+                        hr { margin: 20px 0; border: 0; border-top: 1px solid #eee; }
                     </style>
                 </head>
                 <body>
                     <h1>Printer Test Interface</h1>
                     <textarea id='printText'>Hello World! This is a test print.</textarea><br>
                     <button onclick='sendPrint()'>Print Text</button>
-                    <div id='status'></div>
+                    <div id='status' class='status'></div>
                     <hr>
                     <h2>Receipt Test</h2>
                     <button onclick='sendReceipt()'>Print Sample Receipt</button>
@@ -323,9 +368,11 @@ class MainActivity : AppCompatActivity() {
                             .then(response => response.text())
                             .then(result => {
                                 document.getElementById('status').innerText = result;
+                                document.getElementById('status').style.backgroundColor = '#d4edda';
                             })
                             .catch(error => {
                                 document.getElementById('status').innerText = 'Error: ' + error;
+                                document.getElementById('status').style.backgroundColor = '#f8d7da';
                             });
                         }
                         
@@ -353,9 +400,11 @@ class MainActivity : AppCompatActivity() {
                             .then(response => response.text())
                             .then(result => {
                                 document.getElementById('status').innerText = result;
+                                document.getElementById('status').style.backgroundColor = '#d4edda';
                             })
                             .catch(error => {
                                 document.getElementById('status').innerText = 'Error: ' + error;
+                                document.getElementById('status').style.backgroundColor = '#f8d7da';
                             });
                         } 
                     </script>
@@ -364,8 +413,13 @@ class MainActivity : AppCompatActivity() {
             """.trimIndent()
         }
 
+        /**
+         * Print text using the selected printer method with fallbacks
+         */
         private fun printText(text: String): Boolean {
             try {
+                Log.d(TAG, "Attempting to print using $selectedPrinter printer")
+
                 // First attempt with selected printer
                 val success = when (selectedPrinter) {
                     "thermal" -> printWithThermalPrinter(text)
@@ -375,6 +429,8 @@ class MainActivity : AppCompatActivity() {
 
                 // If selected method failed, try fallback printers
                 if (!success) {
+                    Log.d(TAG, "Primary printing method failed, trying fallbacks")
+
                     mainHandler.post {
                         Toast.makeText(context, "Primary printing method failed, trying fallbacks...", Toast.LENGTH_SHORT).show()
                     }
@@ -409,7 +465,7 @@ class MainActivity : AppCompatActivity() {
 
                 return success
             } catch (e: Exception) {
-                Log.e("PrintServer", "Error printing: ${e.message}")
+                Log.e(TAG, "Error printing: ${e.message}")
                 e.printStackTrace()
                 return false
             }
@@ -421,6 +477,8 @@ class MainActivity : AppCompatActivity() {
         private fun printWithManufacturerPrinter(text: String): Boolean {
             // Check if manufacturer printer is connected
             if (!manufacturerPrinterManager.isConnected()) {
+                Log.d(TAG, "Manufacturer printer not available")
+
                 mainHandler.post {
                     Toast.makeText(context, "Integrated printer not available", Toast.LENGTH_SHORT).show()
                 }
@@ -428,7 +486,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             // Try to print with manufacturer printer
-            Log.d("PrintServer", "Printing with integrated manufacturer printer")
+            Log.d(TAG, "Printing with integrated manufacturer printer")
             return manufacturerPrinterManager.printText(text)
         }
 
@@ -438,12 +496,16 @@ class MainActivity : AppCompatActivity() {
         private fun printWithThermalPrinter(text: String): Boolean {
             // Check if thermal printer is connected
             if (!thermalPrinterManager.isConnected()) {
+                Log.d(TAG, "Thermal printer not connected, attempting to reconnect")
+
                 mainHandler.post {
                     Toast.makeText(context, "Thermal printer not connected. Attempting to reconnect...", Toast.LENGTH_SHORT).show()
                 }
 
                 // Try to reconnect
                 if (!thermalPrinterManager.connect()) {
+                    Log.d(TAG, "Failed to connect to thermal printer")
+
                     mainHandler.post {
                         Toast.makeText(context, "Failed to connect to thermal printer", Toast.LENGTH_SHORT).show()
                     }
@@ -452,7 +514,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             // Try to print with thermal printer
-            Log.d("PrintServer", "Printing with thermal printer")
+            Log.d(TAG, "Printing with thermal printer")
             return thermalPrinterManager.printText(text)
         }
 
@@ -462,6 +524,8 @@ class MainActivity : AppCompatActivity() {
         private fun printWithSystemPrinter(text: String): Boolean {
             // Check if system printer is available
             if (!systemPrinterManager.isAvailable()) {
+                Log.d(TAG, "System printer not available")
+
                 mainHandler.post {
                     Toast.makeText(context, "System printer not available", Toast.LENGTH_SHORT).show()
                 }
@@ -469,7 +533,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             // Try to print with system printer
-            Log.d("PrintServer", "Printing with system printer")
+            Log.d(TAG, "Printing with system printer")
             return systemPrinterManager.printText(text)
         }
     }
